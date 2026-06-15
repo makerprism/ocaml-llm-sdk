@@ -99,6 +99,22 @@ type assistant_turn = {
   usage : usage;
 }
 
+(** {1 Smart constructors}
+
+    Less boilerplate when assembling a transcript than the raw records. The
+    system prompt is passed separately to [complete], so [messages] should hold
+    only user / assistant / tool turns. *)
+
+let user_text text = { role = User; content = [ Text text ] }
+let assistant_text text = { role = Assistant; content = [ Text text ] }
+
+(** A single tool result content block, to drop into a [Tool] turn. *)
+let tool_result ?(is_error = false) ~tool_call_id content =
+  Tool_result { tool_call_id; content; is_error }
+
+(** Wrap tool-result blocks as one [Tool] turn. *)
+let tool_turn results = { role = Tool; content = results }
+
 (** {1 Errors} *)
 
 (** Errors are passed to the CPS error continuation, never raised, so a provider

@@ -85,6 +85,24 @@ let run () : (assistant_turn, error) result Lwt.t =
 `Llm_core.Json` provides non-raising response accessors. Need raw CPS (no Lwt)?
 Use the provider's `Make` directly and pass `on_success` / `on_error`.
 
+### Tool-use loop
+
+`Llm_lwt.Agent.run` is a bounded agentic loop: call the model, run any requested
+tools, feed results back, repeat until the model stops asking for tools (or a
+round cap is hit). You supply how to execute a tool; everything else is uniform.
+
+```ocaml
+Llm_lwt.Agent.run ~max_rounds:6
+  ~complete:(fun messages -> Claude.complete cfg ~system ~messages ~tools ())
+  ~run_tool:(fun (tc : Llm_core.tool_call) ->
+     (* dispatch tc.name / tc.arguments; return the result string *)
+     Lwt.return "...")
+  [ Llm_core.user_text "karaoke at The Lamp?" ]
+```
+
+Smart constructors (`user_text`, `assistant_text`, `tool_result`, `tool_turn`)
+keep transcript-building terse.
+
 The agentic loop (call → run the requested tools → feed results back → re-call
 until `stop_reason <> Tool_use_stop`) lives in *your* code, above the seam, and is
 provider-agnostic.

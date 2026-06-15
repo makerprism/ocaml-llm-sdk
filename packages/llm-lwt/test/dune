@@ -1,0 +1,4 @@
+(test
+ (name test_agent)
+ (modules test_agent)
+ (libraries llm-core llm-lwt lwt lwt.unix))
