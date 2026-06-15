@@ -1,6 +1,6 @@
 (library
  (name llm_lwt)
  (public_name llm-lwt)
- (modules cohttp_client lwt_adapter)
+ (modules cohttp_client lwt_adapter lwt_provider)
  (libraries llm-core lwt lwt.unix cohttp-lwt-unix)
  (preprocess (pps lwt_ppx)))

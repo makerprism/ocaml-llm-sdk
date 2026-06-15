@@ -116,6 +116,59 @@ let string_of_error = function
   | Network_error msg -> Printf.sprintf "network error: %s" msg
   | Invalid_response msg -> Printf.sprintf "invalid response: %s" msg
 
+(** True for a 429. *)
+let is_rate_limited = function Http_error { status = 429; _ } -> true | _ -> false
+
+(** Worth retrying with backoff: 429s, 5xx, and transport failures. A 4xx
+    (other than 429) or an unparseable body is a caller/contract error and is
+    not retried. *)
+let is_retryable = function
+  | Http_error { status; _ } -> status = 429 || status >= 500
+  | Network_error _ -> true
+  | Invalid_response _ -> false
+
+(** {1 Safe JSON access}
+
+    Decode helpers that {b never raise} — unlike {!Yojson.Safe.Util}, whose
+    [member] raises on non-objects. Provider responses evolve and omit fields,
+    so robust decoding matters more than strictness here. *)
+module Json = struct
+  let member key = function
+    | `Assoc o -> ( try List.assoc key o with Not_found -> `Null )
+    | _ -> `Null
+
+  (** Nested lookup, e.g. [path [ "usage"; "prompt_tokens_details" ] json]. *)
+  let path keys json = List.fold_left (fun j k -> member k j) json keys
+
+  let to_int = function `Int n -> n | _ -> 0
+  let to_string_opt = function `String s -> Some s | _ -> None
+  let to_string ?(default = "") j = Option.value ~default (to_string_opt j)
+  let to_list = function `List l -> l | _ -> []
+  let to_bool = function `Bool b -> b | _ -> false
+end
+
+(** {1 Transport helper}
+
+    Wire a JSON POST to the CPS continuations so every provider classifies
+    responses identically: 2xx -> [decode] the body; non-2xx -> {!Http_error};
+    transport failure -> {!Network_error}. [post] is an {!HTTP_CLIENT.post}. *)
+let post_json
+    (post :
+      ?headers:(string * string) list ->
+      ?body:string ->
+      string ->
+      (response -> unit) ->
+      (string -> unit) ->
+      unit) ~headers ~url ~body ~decode on_success on_error =
+  post ~headers ~body url
+    (fun resp ->
+      if resp.status >= 200 && resp.status < 300 then
+        match decode resp.body with
+        | Ok v -> on_success v
+        | Error e -> on_error e
+      else on_error (Http_error { status = resp.status; body = resp.body }))
+    (fun msg -> on_error (Network_error msg))
+
 (** {1 The uniform provider shape} *)
 
 (** Every provider satisfies this. [config] is provider-specific (API key,

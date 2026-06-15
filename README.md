@@ -54,9 +54,11 @@ dune pkg lock && dune build
 ```ocaml
 open Llm_core
 
-(* Pick a provider, give it the Lwt HTTP client. Grok: use Llm_openai.Make with
-   Llm_openai.grok_base_url. *)
-module Claude = Llm_anthropic.Make (Llm_lwt.Cohttp_client)
+(* Pick a provider + the Lwt HTTP client; wrap as an Lwt-returning provider so
+   you never touch continuations. For Grok: Llm_openai.Make with a config built
+   from Llm_openai.grok_base_url. *)
+module Claude =
+  Llm_lwt.Lwt_provider.Make (Llm_anthropic.Make (Llm_lwt.Cohttp_client))
 
 let cfg =
   Llm_anthropic.make_config
@@ -74,13 +76,14 @@ let tools =
                        ("city", `Assoc [ ("type", `String "string") ]) ]);
             ("required", `List [ `String "name"; `String "city" ]) ] } ]
 
-let run () =
+let run () : (assistant_turn, error) result Lwt.t =
   let messages = [ { role = User; content = [ Text "karaoke at The Lamp in Bath?" ] } ] in
-  (* CPS call, lifted into Lwt: *)
-  Llm_lwt.Lwt_adapter.to_lwt
-    (Claude.complete cfg ~system:"You map listings to tools." ~messages ~tools ~max_tokens:1024)
-  (* : (assistant_turn, error) result Lwt.t *)
+  Claude.complete cfg ~system:"You map listings to tools." ~messages ~tools ~max_tokens:1024 ()
 ```
+
+`error` carries `is_retryable` / `is_rate_limited` helpers for backoff, and
+`Llm_core.Json` provides non-raising response accessors. Need raw CPS (no Lwt)?
+Use the provider's `Make` directly and pass `on_success` / `on_error`.
 
 The agentic loop (call → run the requested tools → feed results back → re-call
 until `stop_reason <> Tool_use_stop`) lives in *your* code, above the seam, and is

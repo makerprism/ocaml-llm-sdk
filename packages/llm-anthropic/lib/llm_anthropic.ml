@@ -13,11 +13,14 @@ type config = {
   base_url : string;          (** default ["https://api.anthropic.com"] *)
   anthropic_version : string; (** default ["2023-06-01"] *)
   cache_system : bool;        (** add [cache_control] to the system prompt *)
+  extra_headers : (string * string) list;
+      (** appended to every request — e.g. [anthropic-beta] or an org id *)
 }
 
 let make_config ?(base_url = "https://api.anthropic.com")
-    ?(anthropic_version = "2023-06-01") ?(cache_system = true) ~api_key ~model () =
-  { api_key; model; base_url; anthropic_version; cache_system }
+    ?(anthropic_version = "2023-06-01") ?(cache_system = true)
+    ?(extra_headers = []) ~api_key ~model () =
+  { api_key; model; base_url; anthropic_version; cache_system; extra_headers }
 
 (** {1 Pure encode (our types -> Anthropic request JSON)} *)
 
@@ -87,45 +90,40 @@ let stop_reason_of_string = function
   | other -> Other other
 
 let decode_block json =
-  let open Yojson.Safe.Util in
-  match member "type" json |> to_string_option with
-  | Some "text" ->
-      (match member "text" json |> to_string_option with
-       | Some text -> Some (Text text)
-       | None -> None)
-  | Some "tool_use" ->
-      (match
-         ( member "id" json |> to_string_option,
-           member "name" json |> to_string_option )
-       with
-       | Some id, Some name ->
-           Some (Tool_use { id; name; arguments = member "input" json })
-       | _ -> None)
+  match Json.member "type" json |> Json.to_string_opt with
+  | Some "text" -> (
+      match Json.member "text" json |> Json.to_string_opt with
+      | Some text -> Some (Text text)
+      | None -> None)
+  | Some "tool_use" -> (
+      match
+        ( Json.member "id" json |> Json.to_string_opt,
+          Json.member "name" json |> Json.to_string_opt )
+      with
+      | Some id, Some name ->
+          Some (Tool_use { id; name; arguments = Json.member "input" json })
+      | _ -> None)
   | _ -> None
 
 let decode_usage json =
-  let open Yojson.Safe.Util in
-  let int_field k = match member k json with `Int n -> n | _ -> 0 in
-  { input_tokens = int_field "input_tokens";
-    output_tokens = int_field "output_tokens";
-    cached_input_tokens = int_field "cache_read_input_tokens" }
+  { input_tokens = Json.member "input_tokens" json |> Json.to_int;
+    output_tokens = Json.member "output_tokens" json |> Json.to_int;
+    cached_input_tokens =
+      Json.member "cache_read_input_tokens" json |> Json.to_int }
 
 (** Parse a 2xx Anthropic Messages response body. *)
 let decode_response body : (assistant_turn, error) result =
   match Yojson.Safe.from_string body with
   | exception _ -> Error (Invalid_response "anthropic: body is not valid JSON")
   | json ->
-      let open Yojson.Safe.Util in
       let content =
-        match member "content" json with
-        | `List items -> List.filter_map decode_block items
-        | _ -> []
+        Json.member "content" json |> Json.to_list |> List.filter_map decode_block
       in
       let stop_reason =
-        member "stop_reason" json |> to_string_option
-        |> Option.value ~default:"end_turn" |> stop_reason_of_string
+        Json.member "stop_reason" json |> Json.to_string ~default:"end_turn"
+        |> stop_reason_of_string
       in
-      let usage = decode_usage (member "usage" json) in
+      let usage = decode_usage (Json.member "usage" json) in
       Ok { content; stop_reason; usage }
 
 (** {1 The provider (functor over the HTTP transport)} *)
@@ -139,20 +137,15 @@ module Make (Http : Llm_core.HTTP_CLIENT) :
   let complete cfg ~system ~messages ~tools ?(max_tokens = 1024) on_success
       on_error =
     let body =
-      Yojson.Safe.to_string (encode_request cfg ~system ~messages ~tools ~max_tokens)
+      Yojson.Safe.to_string
+        (encode_request cfg ~system ~messages ~tools ~max_tokens)
     in
     let headers =
       [ ("content-type", "application/json");
         ("x-api-key", cfg.api_key);
         ("anthropic-version", cfg.anthropic_version) ]
+      @ cfg.extra_headers
     in
-    let url = cfg.base_url ^ "/v1/messages" in
-    Http.post ~headers ~body url
-      (fun (resp : Llm_core.response) ->
-        if resp.status >= 200 && resp.status < 300 then
-          match decode_response resp.body with
-          | Ok turn -> on_success turn
-          | Error e -> on_error e
-        else on_error (Http_error { status = resp.status; body = resp.body }))
-      (fun msg -> on_error (Network_error msg))
+    Llm_core.post_json Http.post ~headers ~url:(cfg.base_url ^ "/v1/messages")
+      ~body ~decode:decode_response on_success on_error
 end

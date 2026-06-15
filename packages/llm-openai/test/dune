@@ -1,0 +1,4 @@
+(test
+ (name test_openai)
+ (modules test_openai)
+ (libraries llm-core llm-openai yojson))
