@@ -1,0 +1,5 @@
+(library
+ (name llm_openai)
+ (public_name llm-openai)
+ (modules llm_openai)
+ (libraries llm-core yojson))

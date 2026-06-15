@@ -1,0 +1,5 @@
+(library
+ (name llm_anthropic)
+ (public_name llm-anthropic)
+ (modules llm_anthropic)
+ (libraries llm-core yojson))

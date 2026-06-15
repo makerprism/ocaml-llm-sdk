@@ -1,0 +1,6 @@
+(library
+ (name llm_core)
+ (public_name llm-core)
+ (wrapped false)
+ (modules llm_core)
+ (libraries yojson))

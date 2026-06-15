@@ -1,0 +1,4 @@
+(test
+ (name test_anthropic)
+ (modules test_anthropic)
+ (libraries llm-core llm-anthropic yojson))
