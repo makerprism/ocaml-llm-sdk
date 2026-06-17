@@ -66,17 +66,24 @@ let encode_system cfg system =
             ("cache_control", `Assoc [ ("type", `String "ephemeral") ]) ] ]
   else `String system
 
-let encode_request cfg ~system ~messages ~tools ~max_tokens : Yojson.Safe.t =
+let encode_request cfg ~system ~messages ~tools ~max_tokens ?temperature () :
+    Yojson.Safe.t =
   let base =
     [ ("model", `String cfg.model);
       ("max_tokens", `Int max_tokens);
       ("system", encode_system cfg system);
       ("messages", `List (List.map encode_message messages)) ]
   in
+  (* Omit [temperature] entirely when unset so the model default applies. *)
+  let with_temperature =
+    match temperature with
+    | Some t -> base @ [ ("temperature", `Float t) ]
+    | None -> base
+  in
   let with_tools =
     match tools with
-    | [] -> base
-    | _ -> base @ [ ("tools", `List (List.map encode_tool tools)) ]
+    | [] -> with_temperature
+    | _ -> with_temperature @ [ ("tools", `List (List.map encode_tool tools)) ]
   in
   `Assoc with_tools
 
@@ -134,11 +141,11 @@ module Make (Http : Llm_core.HTTP_CLIENT) :
 
   let name = "anthropic"
 
-  let complete cfg ~system ~messages ~tools ?(max_tokens = 1024) on_success
-      on_error =
+  let complete cfg ~system ~messages ~tools ?(max_tokens = 1024) ?temperature
+      on_success on_error =
     let body =
       Yojson.Safe.to_string
-        (encode_request cfg ~system ~messages ~tools ~max_tokens)
+        (encode_request cfg ~system ~messages ~tools ~max_tokens ?temperature ())
     in
     let headers =
       [ ("content-type", "application/json");
