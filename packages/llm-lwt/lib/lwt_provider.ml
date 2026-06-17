@@ -14,7 +14,8 @@ module Make (P : Llm_core.PROVIDER) = struct
 
   let name = P.name
 
-  let complete cfg ~system ~messages ~tools ?max_tokens () :
+  let complete cfg ~system ~messages ~tools ?max_tokens ?temperature () :
       (Llm_core.assistant_turn, Llm_core.error) result Lwt.t =
-    Lwt_adapter.to_lwt (P.complete cfg ~system ~messages ~tools ?max_tokens)
+    Lwt_adapter.to_lwt
+      (P.complete cfg ~system ~messages ~tools ?max_tokens ?temperature)
 end

@@ -19,10 +19,18 @@ let () =
   in
   let messages = [ { role = User; content = [ Text "karaoke at The Lamp?" ] } ] in
   let req =
-    Llm_anthropic.encode_request cfg ~system:"SYS" ~messages ~tools ~max_tokens:512
+    Llm_anthropic.encode_request cfg ~system:"SYS" ~messages ~tools ~max_tokens:512 ()
   in
   check "model encoded" (member "model" req |> to_string = "claude-x");
   check "max_tokens encoded" (member "max_tokens" req |> to_int = 512);
+  check "temperature omitted by default"
+    (match member "temperature" req with `Null -> true | _ -> false);
+  check "temperature encoded when set"
+    (let req_t =
+       Llm_anthropic.encode_request cfg ~system:"SYS" ~messages ~tools
+         ~max_tokens:512 ~temperature:0.2 ()
+     in
+     member "temperature" req_t |> to_float = 0.2);
   check "system carries cache_control"
     (match member "system" req with
      | `List [ (`Assoc _ as blk) ] ->

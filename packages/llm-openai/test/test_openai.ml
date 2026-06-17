@@ -38,6 +38,18 @@ let () =
      | [ `Assoc fields ] -> List.assoc "role" fields = `String "tool"
      | _ -> false);
 
+  (* temperature: omitted by default, present in the request body when set *)
+  let cfg = Llm_openai.make_config ~api_key:"k" ~model:"gpt-x" () in
+  check "temperature omitted by default"
+    (let req = Llm_openai.encode_request cfg ~system:"S" ~messages:[] ~tools:[] ~max_tokens:64 () in
+     match member "temperature" req with `Null -> true | _ -> false);
+  check "temperature encoded when set"
+    (let req =
+       Llm_openai.encode_request cfg ~system:"S" ~messages:[] ~tools:[] ~max_tokens:64
+         ~temperature:0.2 ()
+     in
+     member "temperature" req |> to_float = 0.2);
+
   (* decode: tool_calls + finish_reason + usage WITHOUT prompt_tokens_details *)
   let body =
     {|{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"city\":\"Bath\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":12,"completion_tokens":3}}|}

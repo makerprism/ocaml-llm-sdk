@@ -89,7 +89,8 @@ let encode_tool { name; description; input_schema } =
             ("description", `String description);
             ("parameters", input_schema) ] ) ]
 
-let encode_request cfg ~system ~messages ~tools ~max_tokens : Yojson.Safe.t =
+let encode_request cfg ~system ~messages ~tools ~max_tokens ?temperature () :
+    Yojson.Safe.t =
   let system_msg =
     `Assoc [ ("role", `String "system"); ("content", `String system) ]
   in
@@ -99,10 +100,16 @@ let encode_request cfg ~system ~messages ~tools ~max_tokens : Yojson.Safe.t =
       (cfg.max_tokens_field, `Int max_tokens);
       ("messages", `List body_messages) ]
   in
+  (* Omit [temperature] entirely when unset so the model default applies. *)
+  let with_temperature =
+    match temperature with
+    | Some t -> base @ [ ("temperature", `Float t) ]
+    | None -> base
+  in
   let with_tools =
     match tools with
-    | [] -> base
-    | _ -> base @ [ ("tools", `List (List.map encode_tool tools)) ]
+    | [] -> with_temperature
+    | _ -> with_temperature @ [ ("tools", `List (List.map encode_tool tools)) ]
   in
   `Assoc with_tools
 
@@ -171,11 +178,11 @@ module Make (Http : Llm_core.HTTP_CLIENT) :
 
   let name = "openai"
 
-  let complete cfg ~system ~messages ~tools ?(max_tokens = 1024) on_success
-      on_error =
+  let complete cfg ~system ~messages ~tools ?(max_tokens = 1024) ?temperature
+      on_success on_error =
     let body =
       Yojson.Safe.to_string
-        (encode_request cfg ~system ~messages ~tools ~max_tokens)
+        (encode_request cfg ~system ~messages ~tools ~max_tokens ?temperature ())
     in
     let headers =
       [ ("content-type", "application/json");

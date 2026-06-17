@@ -189,7 +189,12 @@ let post_json
 
 (** Every provider satisfies this. [config] is provider-specific (API key,
     model, base URL); everything else is uniform, so the agentic loop above the
-    seam is provider-agnostic. [complete] is one model round-trip in CPS. *)
+    seam is provider-agnostic. [complete] is one model round-trip in CPS.
+
+    [temperature], when given, is sent to the provider (both Anthropic and the
+    OpenAI/Grok shape accept it); omit it to take the model's default. Lower
+    values make a tool-driven loop more deterministic and curb runaway
+    repetition. *)
 module type PROVIDER = sig
   type config
 
@@ -201,6 +206,7 @@ module type PROVIDER = sig
     messages:message list ->
     tools:tool_def list ->
     ?max_tokens:int ->
+    ?temperature:float ->
     (assistant_turn -> unit) ->
     (error -> unit) ->
     unit
